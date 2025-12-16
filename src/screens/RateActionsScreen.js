@@ -13,6 +13,33 @@ export const RateActionsScreen = ({ route, navigation }) => {
   const [ratings, setRatings] = useState({});
   const [loading, setLoading] = useState(false);
 
+  const buildInitialRatings = useCallback((list = [], ratingsMap = {}) => {
+    const initial = {};
+    list.forEach(action => {
+      const id = action.copingActionId || action.id;
+      initial[id] = action.helpfulnessRating ?? ratingsMap[id] ?? 3;
+    });
+    return initial;
+  }, []);
+
+  const normalizeActionsFromLog = useCallback((log = {}) => {
+    const ids = Array.isArray(log.actionIds) ? log.actionIds : [];
+    const ratingsMap = log.ratings || {};
+    const allActions = Array.isArray(log.actions) ? log.actions : [];
+
+    const normalized = ids.map(id => {
+      const match = allActions.find(a => (a.copingActionId || a.id) === id) || { copingActionId: id, actionName: id };
+      return {
+        ...match,
+        copingActionId: id,
+        actionName: match.actionName || match.name || id,
+        helpfulnessRating: ratingsMap[id] ?? match.helpfulnessRating ?? null,
+      };
+    });
+
+    return { actions: normalized, ratingsMap };
+  }, []);
+
   const handleRate = (actionId, value) => {
     setRatings(prev => ({ ...prev, [actionId]: value }));
   };
@@ -34,19 +61,9 @@ export const RateActionsScreen = ({ route, navigation }) => {
       try {
         const fresh = await checkInAPI.getById(checkInId);
         const log = fresh?.data || {};
-        const ids = Array.isArray(log.actionIds) ? log.actionIds : [];
-        const ratingsMap = log.ratings || {};
-        const allActions = Array.isArray(log.actions) ? log.actions : [];
-        const filtered = ids.map(id => {
-          const match = allActions.find(a => (a.copingActionId || a.id) === id) || { copingActionId: id, actionName: id };
-          return {
-            ...match,
-            copingActionId: id,
-            actionName: match.actionName || match.name || id,
-            helpfulnessRating: ratingsMap[id] ?? match.helpfulnessRating ?? null,
-          };
-        });
-        setActions(filtered);
+        const { actions: normalized, ratingsMap } = normalizeActionsFromLog(log);
+        setActions(normalized);
+        setRatings(buildInitialRatings(normalized, ratingsMap));
       } catch {
       }
 
@@ -97,68 +114,31 @@ export const RateActionsScreen = ({ route, navigation }) => {
 
   const renderedActions = useMemo(() => actions, [actions]);
 
-  const loadCheckInActions = async () => {
+  const loadCheckInActions = useCallback(async () => {
     if (!checkInId) return;
     try {
       const response = await checkInAPI.getById(checkInId);
       const log = response?.data || {};
-      const ids = Array.isArray(log.actionIds) ? log.actionIds : [];
-      const ratingsMap = log.ratings || {};
-      const allActions = Array.isArray(log.actions) ? log.actions : [];
-      const filtered = ids.map(id => {
-        const match = allActions.find(a => (a.copingActionId || a.id) === id) || { copingActionId: id, actionName: id };
-        return {
-          ...match,
-          copingActionId: id,
-          actionName: match.actionName || match.name || id,
-          helpfulnessRating: ratingsMap[id] ?? match.helpfulnessRating ?? null,
-        };
-      });
-      setActions(filtered);
-      const initial = {};
-      filtered.forEach(action => {
-        const id = action.copingActionId || action.id;
-        initial[id] = action.helpfulnessRating ?? ratingsMap[id] ?? 3;
-      });
-      setRatings(initial);
+      const { actions: normalized, ratingsMap } = normalizeActionsFromLog(log);
+      setActions(normalized);
+      setRatings(buildInitialRatings(normalized, ratingsMap));
     } catch (error) {
-      const initial = {};
-      initialActions.forEach(action => {
-        const id = action.copingActionId || action.id;
-        initial[id] = action.helpfulnessRating || 3;
-      });
-      setRatings(initial);
+      setRatings(buildInitialRatings(actions));
     }
-  };
+  }, [checkInId, normalizeActionsFromLog, buildInitialRatings, actions]);
 
   useEffect(() => {
     if (route.params?.actions && !checkInId) {
       const incoming = route.params.actions || [];
       setActions(incoming);
-      const initial = {};
-      incoming.forEach(action => {
-        const id = action.copingActionId || action.id;
-        initial[id] = action.helpfulnessRating || 3;
-      });
-      setRatings(initial);
+      setRatings(buildInitialRatings(incoming));
     }
-  }, [route.params?.actions, checkInId]);
+  }, [route.params?.actions, checkInId, buildInitialRatings]);
 
   useFocusEffect(
     useCallback(() => {
       loadCheckInActions();
-    }, [checkInId])
-  );
-
-  useFocusEffect(
-    useCallback(() => {
-      const initial = {};
-      actions.forEach(action => {
-        const id = action.copingActionId || action.id;
-        initial[id] = action.helpfulnessRating || 3;
-      });
-      setRatings(initial);
-    }, [actions])
+    }, [checkInId, loadCheckInActions])
   );
 
   return (
