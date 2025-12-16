@@ -13,6 +13,31 @@ export const RateActionsScreen = ({ route, navigation }) => {
   const [ratings, setRatings] = useState({});
   const [loading, setLoading] = useState(false);
 
+  const buildRatingsFromActions = useCallback((list = [], ratingsFromLog = {}, fallback = 3) => {
+    const initial = {};
+    list.forEach(action => {
+      const id = action.copingActionId || action.id;
+      const rating = ratingsFromLog[id] ?? action.helpfulnessRating ?? fallback;
+      initial[id] = typeof rating === 'number' ? rating : fallback;
+    });
+    return initial;
+  }, []);
+
+  const normalizeActionsFromLog = useCallback((log = {}) => {
+    const ids = Array.isArray(log.actionIds) ? log.actionIds : [];
+    const ratingsMap = log.ratings || {};
+    const allActions = Array.isArray(log.actions) ? log.actions : [];
+    return ids.map(id => {
+      const match = allActions.find(a => (a.copingActionId || a.id) === id) || { copingActionId: id, actionName: id };
+      return {
+        ...match,
+        copingActionId: id,
+        actionName: match.actionName || match.name || id,
+        helpfulnessRating: ratingsMap[id] ?? match.helpfulnessRating ?? null,
+      };
+    });
+  }, []);
+
   const handleRate = (actionId, value) => {
     setRatings(prev => ({ ...prev, [actionId]: value }));
   };
@@ -34,19 +59,7 @@ export const RateActionsScreen = ({ route, navigation }) => {
       try {
         const fresh = await checkInAPI.getById(checkInId);
         const log = fresh?.data || {};
-        const ids = Array.isArray(log.actionIds) ? log.actionIds : [];
-        const ratingsMap = log.ratings || {};
-        const allActions = Array.isArray(log.actions) ? log.actions : [];
-        const filtered = ids.map(id => {
-          const match = allActions.find(a => (a.copingActionId || a.id) === id) || { copingActionId: id, actionName: id };
-          return {
-            ...match,
-            copingActionId: id,
-            actionName: match.actionName || match.name || id,
-            helpfulnessRating: ratingsMap[id] ?? match.helpfulnessRating ?? null,
-          };
-        });
-        setActions(filtered);
+        setActions(normalizeActionsFromLog(log));
       } catch {
       }
 
@@ -102,32 +115,11 @@ export const RateActionsScreen = ({ route, navigation }) => {
     try {
       const response = await checkInAPI.getById(checkInId);
       const log = response?.data || {};
-      const ids = Array.isArray(log.actionIds) ? log.actionIds : [];
-      const ratingsMap = log.ratings || {};
-      const allActions = Array.isArray(log.actions) ? log.actions : [];
-      const filtered = ids.map(id => {
-        const match = allActions.find(a => (a.copingActionId || a.id) === id) || { copingActionId: id, actionName: id };
-        return {
-          ...match,
-          copingActionId: id,
-          actionName: match.actionName || match.name || id,
-          helpfulnessRating: ratingsMap[id] ?? match.helpfulnessRating ?? null,
-        };
-      });
-      setActions(filtered);
-      const initial = {};
-      filtered.forEach(action => {
-        const id = action.copingActionId || action.id;
-        initial[id] = action.helpfulnessRating ?? ratingsMap[id] ?? 3;
-      });
-      setRatings(initial);
+      const normalized = normalizeActionsFromLog(log);
+      setActions(normalized);
+      setRatings(buildRatingsFromActions(normalized, log.ratings));
     } catch (error) {
-      const initial = {};
-      initialActions.forEach(action => {
-        const id = action.copingActionId || action.id;
-        initial[id] = action.helpfulnessRating || 3;
-      });
-      setRatings(initial);
+      setRatings(buildRatingsFromActions(actions));
     }
   };
 
@@ -135,12 +127,7 @@ export const RateActionsScreen = ({ route, navigation }) => {
     if (route.params?.actions && !checkInId) {
       const incoming = route.params.actions || [];
       setActions(incoming);
-      const initial = {};
-      incoming.forEach(action => {
-        const id = action.copingActionId || action.id;
-        initial[id] = action.helpfulnessRating || 3;
-      });
-      setRatings(initial);
+      setRatings(buildRatingsFromActions(incoming));
     }
   }, [route.params?.actions, checkInId]);
 
@@ -152,12 +139,7 @@ export const RateActionsScreen = ({ route, navigation }) => {
 
   useFocusEffect(
     useCallback(() => {
-      const initial = {};
-      actions.forEach(action => {
-        const id = action.copingActionId || action.id;
-        initial[id] = action.helpfulnessRating || 3;
-      });
-      setRatings(initial);
+      setRatings(buildRatingsFromActions(actions));
     }, [actions])
   );
 
